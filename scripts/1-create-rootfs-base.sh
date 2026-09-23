@@ -180,7 +180,15 @@ rm -rf /usr/lib/firmware/{intel,nvidia,amdgpu,mediatek,radeon,cirrus,brcm,ti-con
 
 echo 'Writing /etc/kernel/cmdline for UKI boot...'
 mkdir -p /etc/kernel
-echo 'root=LABEL=fedora_root rw quiet' > /etc/kernel/cmdline
+echo 'root=LABEL=fedora_root rw quiet systemd.gpt_auto=no acpi=off fw_devlink=permissive' > /etc/kernel/cmdline
+
+# The sm8150 boot chain (rEFInd/AndroidBootPkg on the ESP) does not hand the
+# kernel a device tree, so embed the nabu DTB into the UKI. Without it the
+# eMMC/UFS block driver never probes and initramfs cannot find root.
+cat > /etc/kernel/uki.conf <<'EOF'
+[UKI]
+DeviceTree=/boot/dtb-linux-nabu
+EOF
 
 dnf clean all
 CHROOT_SETUP
@@ -244,7 +252,8 @@ ukify build \
     --linux="/usr/lib/modules/$KVER/vmlinuz" \
     --initrd="/boot/initramfs-$KVER.img" \
     --output="/boot/efi/EFI/fedora/fedora-$KVER.efi" \
-    --cmdline="root=LABEL=fedora_root rw quiet" \
+    --cmdline="root=LABEL=fedora_root rw quiet systemd.gpt_auto=no acpi=off fw_devlink=permissive" \
+    --devicetree=/boot/dtb-linux-nabu \
     --os-release=@/etc/os-release
 ls -l "/boot/efi/EFI/fedora/"
 if [ ! -f "/boot/efi/EFI/fedora/fedora-$KVER.efi" ]; then
