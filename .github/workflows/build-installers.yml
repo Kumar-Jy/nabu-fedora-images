@@ -23,9 +23,9 @@ on:
         default: '45'
         type: string
       kernel_version:
-        description: "Kernel version to install (e.g. 6.14.11-8); empty = latest in [nabu] repo"
+        description: "Kernel version to install (e.g. 6.14.11-10); empty = latest in [nabu] repo"
         type: string
-        default: "6.14.11-8"
+        default: "6.14.11-10"
         required: false
       nightly_kernel_url:
         description: "Nightly kernel ZIP URL (takes priority over kernel_version). Leave empty to use kernel_version."
