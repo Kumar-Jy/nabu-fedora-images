@@ -169,6 +169,11 @@ echo 'user:fedora' | chpasswd
 echo '%wheel ALL=(ALL) ALL' > /etc/sudoers.d/99-wheel-user
 chmod 0440 /etc/sudoers.d/99-wheel-user
 
+# Remove firmware blobs for chipsets this device doesn't have (mirrors the
+# nabu-arch-images recipe). Keeps ath10k/ath11k/btqca (Qualcomm WiFi/BT for
+# nabu); nabu-specific qcom/venus firmware comes from linux-firmware-xiaomi-nabu.
+rm -rf /usr/lib/firmware/{intel,nvidia,amdgpu,mediatek,radeon,cirrus,brcm,ti-connectivity,i915}
+
 echo 'Writing /etc/kernel/cmdline for UKI boot...'
 mkdir -p /etc/kernel
 echo 'root=LABEL=fedora_root rw quiet' > /etc/kernel/cmdline
