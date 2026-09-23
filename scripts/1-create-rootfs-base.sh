@@ -159,6 +159,11 @@ systemctl enable qrtr-ns 2>/dev/null || true
 systemctl enable pd-mapper 2>/dev/null || true
 
 echo 'Creating user...'
+# Fedora's default /etc/group has no 'storage'/'optical' (Debian/Arch-isms).
+# Create them if missing so the -G membership stays valid on any base.
+for g in wheel audio video storage optical; do
+    getent group "$g" >/dev/null 2>&1 || groupadd "$g"
+done
 useradd -m -G wheel,audio,video,storage,optical -s /bin/bash user
 echo 'user:fedora' | chpasswd
 echo '%wheel ALL=(ALL) ALL' > /etc/sudoers.d/99-wheel-user
