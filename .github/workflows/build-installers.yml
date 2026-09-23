@@ -49,7 +49,7 @@ jobs:
       matrix: ${{ steps.generate_matrix.outputs.matrix }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Generate build matrix
         id: generate_matrix
@@ -100,7 +100,7 @@ jobs:
       base_rootfs_path: ${{ steps.set_path.outputs.base_rootfs_path }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Create Base aarch64 rootfs
         run: |
@@ -116,19 +116,19 @@ jobs:
           tar -I zstd -cf base-rootfs.tar.zst fedora-rootfs-base
 
       - name: Upload Base Rootfs Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: base-rootfs-archive
           path: base-rootfs.tar.zst
 
       - name: Upload EFI Files Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: efi-artifact
           path: efi-files.zip
 
       - name: Upload ESP Image Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: esp-image
           path: flashable_esp.img.zst
@@ -146,22 +146,22 @@ jobs:
         variant: ${{ fromJson(needs.prepare-matrix.outputs.matrix) }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Download Base Rootfs Artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: base-rootfs-archive
           path: .
 
       - name: Download EFI Artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: efi-artifact
           path: .
 
       - name: Download ESP Image Artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: esp-image
           path: .
@@ -205,7 +205,7 @@ jobs:
           chmod +x flash-linux.sh
 
       - name: Upload rEFInd artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nabu-fedora-rEFInd
           path: |
@@ -217,7 +217,7 @@ jobs:
           retention-days: 90
 
       - name: Upload installer artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nabu-fedora-installer-${{ matrix.variant }}
           path: |
@@ -241,10 +241,10 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
 
