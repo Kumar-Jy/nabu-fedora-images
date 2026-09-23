@@ -1,0 +1,261 @@
+name: Build installers
+
+on:
+  workflow_dispatch:
+    inputs:
+      trigger_release:
+        description: "Also create a GitHub release after build"
+        type: boolean
+        default: false
+      variant:
+        description: 'Select the variant to build. "all" will build all available variants.'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - gnome
+          - kde
+          - niri
+      build_version:
+        description: 'Build version, e.g. 45'
+        required: true
+        default: '45'
+        type: string
+      kernel_version:
+        description: "Kernel version to install (e.g. 6.14.11-8); empty = latest in [nabu] repo"
+        type: string
+        default: "6.14.11-8"
+        required: false
+      nightly_kernel_url:
+        description: "Nightly kernel ZIP URL (takes priority over kernel_version). Leave empty to use kernel_version."
+        type: string
+        default: ""
+        required: false
+
+permissions:
+  contents: write
+
+env:
+  BUILD_VERSION: ${{ github.event.inputs.build_version }}
+  KERNEL_VERSION: ${{ github.event.inputs.kernel_version }}
+  NIGHTLY_KERNEL_URL: ${{ github.event.inputs.nightly_kernel_url }}
+
+jobs:
+  # Scan scripts/2-create-rootfs-*.sh to build the variant matrix dynamically.
+  prepare-matrix:
+    runs-on: ubuntu-24.04-arm
+    outputs:
+      matrix: ${{ steps.generate_matrix.outputs.matrix }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Generate build matrix
+        id: generate_matrix
+        run: |
+          AVAILABLE_VARIANTS=()
+          echo "Scanning for available variants in ./scripts directory..."
+          for f in ./scripts/2-create-rootfs-*.sh; do
+            if [ -e "$f" ]; then
+              variant=$(basename "$f" .sh | sed 's/2-create-rootfs-//')
+              AVAILABLE_VARIANTS+=("$variant")
+            fi
+          done
+
+          echo "Available variants found: ${AVAILABLE_VARIANTS[@]}"
+          USER_CHOICE="${{ github.event.inputs.variant }}"
+          echo "User selected: $USER_CHOICE"
+
+          final_variants=()
+          if [ ${#AVAILABLE_VARIANTS[@]} -gt 0 ]; then
+            if [ "$USER_CHOICE" == "all" ]; then
+              final_variants=("${AVAILABLE_VARIANTS[@]}")
+            else
+              if [[ " ${AVAILABLE_VARIANTS[*]} " =~ " ${USER_CHOICE} " ]]; then
+                final_variants=("$USER_CHOICE")
+              else
+                echo "::error::Selected variant '${USER_CHOICE}' does not have a corresponding script file."
+                exit 1
+              fi
+            fi
+          else
+            echo "::warning::No '2-create-rootfs-*.sh' scripts found."
+          fi
+
+          if [ ${#final_variants[@]} -gt 0 ]; then
+            matrix=$(printf "%s\n" "${final_variants[@]}" | jq -R . | jq -sc .)
+          else
+            matrix='[]'
+          fi
+          echo "Generated Matrix: $matrix"
+          echo "matrix=$matrix" >> $GITHUB_OUTPUT
+
+  build-base:
+    runs-on: ubuntu-24.04-arm
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/fedora-nabu-builder:45
+      options: --privileged
+    outputs:
+      base_rootfs_path: ${{ steps.set_path.outputs.base_rootfs_path }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create Base aarch64 rootfs
+        run: |
+          chmod +x ./scripts/1-create-rootfs-base.sh
+          ./scripts/1-create-rootfs-base.sh
+
+      - name: Set base_rootfs_path output
+        id: set_path
+        run: echo "base_rootfs_path=fedora-rootfs-base" >> $GITHUB_OUTPUT
+
+      - name: Package Base Rootfs
+        run: |
+          tar -I zstd -cf base-rootfs.tar.zst fedora-rootfs-base
+
+      - name: Upload Base Rootfs Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: base-rootfs-archive
+          path: base-rootfs.tar.zst
+
+      - name: Upload EFI Files Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: efi-artifact
+          path: efi-files.zip
+
+      - name: Upload ESP Image Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: esp-image
+          path: flashable_esp.img.zst
+
+  build-variants:
+    needs: [build-base, prepare-matrix]
+    if: fromJson(needs.prepare-matrix.outputs.matrix)[0] != null
+    runs-on: ubuntu-24.04-arm
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/fedora-nabu-builder:45
+      options: --privileged
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: ${{ fromJson(needs.prepare-matrix.outputs.matrix) }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download Base Rootfs Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: base-rootfs-archive
+          path: .
+
+      - name: Download EFI Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: efi-artifact
+          path: .
+
+      - name: Download ESP Image Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: esp-image
+          path: .
+
+      - name: Extract Base Rootfs
+        run: |
+          tar -xf base-rootfs.tar.zst
+
+      - name: Build Rootfs Variant (${{ matrix.variant }})
+        run: |
+          chmod +x ./scripts/2-create-rootfs-${{ matrix.variant }}.sh
+          ./scripts/2-create-rootfs-${{ matrix.variant }}.sh ${{ needs.build-base.outputs.base_rootfs_path }}
+
+      - name: Prepare artifact directories
+        run: |
+          mkdir -p ./images
+          mv ./rootfs.img ./images/
+
+      - name: Download WinPE image
+        run: |
+          wget "https://github.com/WOAFlasher/WinInstaller/releases/download/WinPE/WinPE23H2.img" -qO ./installer/pe.img || \
+          (test -s ./installer/pe.img && echo "WinPE download skipped (exists)")
+
+      - name: Unpack EFI files
+        run: |
+          mkdir -p ./efi
+          unzip -o efi-files.zip -d ./efi-tmp/
+          cp -a ./efi-tmp/EFI/. ./efi/
+          rm -rf ./efi-tmp
+          ls -R ./efi | head -20
+
+      - name: Prepare ESP image
+        run: |
+          unzstd -f flashable_esp.img.zst -o ./images/esp.img
+          ls -la ./images/
+
+      - name: Copy flash scripts
+        run: |
+          cp ./base/overlay/opt/nabu/fastboot-script/flash-linux.bat .
+          cp ./base/overlay/opt/nabu/fastboot-script/flash-linux.sh .
+          chmod +x flash-linux.sh
+
+      - name: Upload rEFInd artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nabu-fedora-rEFInd
+          path: |
+            bin
+            DBKP
+            efi
+            installer
+            META-INF
+          retention-days: 90
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nabu-fedora-installer-${{ matrix.variant }}
+          path: |
+            bin
+            DBKP
+            efi
+            flash-linux.bat
+            flash-linux.sh
+            images
+            installer
+            META-INF
+          retention-days: 90
+
+  create-release:
+    runs-on: ubuntu-24.04-arm
+    needs: build-variants
+    if: github.event.inputs.trigger_release == 'true'
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Display structure of downloaded artifacts
+        run: ls -R artifacts
+
+      - name: Create Release and Upload Assets
+        run: |
+          if [ -z "$(ls -A artifacts)" ]; then
+            echo "No artifacts found to release. Skipping."
+            exit 0
+          fi
+          chmod +x ./scripts/3-create-release.sh
+          ./scripts/3-create-release.sh

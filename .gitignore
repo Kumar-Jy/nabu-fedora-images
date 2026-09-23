@@ -1,0 +1,15 @@
+# build artifacts
+fedora-rootfs-*/
+rootfs.img
+efi-files.zip
+flashable_esp.img
+flashable_esp.img.zst
+base-rootfs.tar.zst
+kernel-pkgs/
+kernel-nightly.zip
+*.pkg.tar.xz
+*.pkg.tar.zst
+artifacts/
+images/
+esp-mount/
+mountpoint/
