@@ -10,7 +10,8 @@ permissions:
   packages: write
 
 env:
-  CONTAINER_IMAGE: ghcr.io/${{ github.repository_owner }}/fedora-nabu-builder:45
+  # Docker needs lowercase; GHCR resolves the owner case-insensitively.
+  CONTAINER_IMAGE: ghcr.io/kumar-jy/fedora-nabu-builder:45
 
 jobs:
   build_and_push_image:
