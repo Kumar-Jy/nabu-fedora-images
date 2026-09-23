@@ -124,6 +124,7 @@ dnf install -y --nogpgcheck \
     --setopt=install_weak_deps=False \
     --setopt=skip_if_unavailable=True \
     --exclude dracut-config-rescue \
+    --exclude 'amd-gpu-firmware,brcmfmac-firmware,intel-gpu-firmware,iwlegacy-firmware,iwlwifi-dvm-firmware,iwlwifi-mvm-firmware,libertas-firmware,mt7xxx-firmware,nvidia-gpu-firmware,nxpwireless-firmware,qcom-wwan-firmware,realtek-firmware,tiwilink-firmware' \
     @hardware-support \
     alsa-utils \
     pulseaudio-utils \
@@ -170,8 +171,11 @@ echo '%wheel ALL=(ALL) ALL' > /etc/sudoers.d/99-wheel-user
 chmod 0440 /etc/sudoers.d/99-wheel-user
 
 # Remove firmware blobs for chipsets this device doesn't have (mirrors the
-# nabu-arch-images recipe). Keeps ath10k/ath11k/btqca (Qualcomm WiFi/BT for
-# nabu); nabu-specific qcom/venus firmware comes from linux-firmware-xiaomi-nabu.
+# nabu-arch-images recipe). Fedora ships firmware as split subpackages, so the
+# big x86/other-platform ones are already excluded at dnf time above; this rm
+# is a secondary safety net for anything that sneaks in as a dependency.
+# Keeps ath10k/ath11k/btqca/qcom (Qualcomm WiFi/BT/GPU for nabu); nabu-specific
+# qcom/venus firmware comes from linux-firmware-xiaomi-nabu.
 rm -rf /usr/lib/firmware/{intel,nvidia,amdgpu,mediatek,radeon,cirrus,brcm,ti-connectivity,i915}
 
 echo 'Writing /etc/kernel/cmdline for UKI boot...'
