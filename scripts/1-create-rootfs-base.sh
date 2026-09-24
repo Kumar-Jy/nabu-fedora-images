@@ -18,7 +18,7 @@
 #
 # Env:
 #   BUILD_VERSION       e.g. 45
-#   KERNEL_VERSION      e.g. 6.14.11-8 (default)
+#   KERNEL_VERSION      e.g. 6.14.11-10 (default)
 #   NIGHTLY_KERNEL_URL  optional ZIP URL for kernel packages
 # ==============================================================================
 
@@ -28,7 +28,7 @@ ROOTFS_DIR="$PWD/fedora-rootfs-base"
 RELEASEVER="45"
 ARCH="aarch64"
 BUILD_VERSION="${BUILD_VERSION}"
-KERNEL_VERSION="${KERNEL_VERSION:-6.14.11-8}"
+KERNEL_VERSION="${KERNEL_VERSION:-6.14.11-10}"
 NIGHTLY_KERNEL_URL="${NIGHTLY_KERNEL_URL:-}"
 REPO_OWNER="${GITHUB_REPOSITORY_OWNER:-Kumar-Jy}"
 
@@ -144,7 +144,8 @@ dnf install -y --nogpgcheck \
     iio-sensor-proxy \
     libcamera \
     libcamera-ipa \
-    libcamera-tools
+    libcamera-tools \
+    libusb1
 
 # Qualcomm modem/audio services from onesaladleaf/pocketblue COPR (F45 builds)
 echo 'Installing pocketblue services (rmtfs/tqftpserv/qbootctl/q6voiced)...'
@@ -242,6 +243,57 @@ FW_PKG_URL="https://github.com/${REPO_OWNER}/nabu-pkgs/releases/download/repo/li
 curl -fL "$FW_PKG_URL" -o firmware-xiaomi-nabu.pkg.tar.xz
 unpack_arch_pkg firmware-xiaomi-nabu.pkg.tar.xz
 
+# --- displaylink: evdi module (built for THIS kernel) + userland ----------------
+# Userland and module source come from the same nabu-pkgs release the Arch image
+# uses. The evdi module is compiled against this kernel's headers inside the
+# chroot and kept in the rootfs; no on-device dkms needed (Fedora kernels only
+# change via image rebuilds, which rebuild the module for the new kernel).
+echo ">>> Installing DisplayLink (evdi built for $KVER)"
+BASE_PKG_URL="https://github.com/${REPO_OWNER}/nabu-pkgs/releases/download/repo"
+DL_PKG_VERSION="6.3-1"
+EVDI_DKMS_VERSION="1.15.0-1"
+ARCHPKG="aarch64.pkg.tar.xz"
+
+curl -fL "${BASE_PKG_URL}/displaylink-${DL_PKG_VERSION}-${ARCHPKG}" -o displaylink.pkg.tar.xz
+curl -fL "${BASE_PKG_URL}/evdi-dkms-${EVDI_DKMS_VERSION}-${ARCHPKG}" -o evdi-dkms.pkg.tar.xz
+unpack_arch_pkg displaylink.pkg.tar.xz
+unpack_arch_pkg evdi-dkms.pkg.tar.xz
+
+# headers for THIS kernel: from the nightly zip if present, else the release
+HEADERS_PKG=$(ls kernel-pkgs/linux-nabu-headers-*.pkg.tar.* 2>/dev/null | head -1 || true)
+if [ -z "$HEADERS_PKG" ]; then
+    echo ">>> Downloading linux-nabu-headers-${KERNEL_VERSION}"
+    curl -fL "${BASE_PKG_URL}/linux-nabu-headers-${KERNEL_VERSION}-${ARCHPKG}" -o headers.pkg.tar.xz
+    HEADERS_PKG="headers.pkg.tar.xz"
+fi
+unpack_arch_pkg "$HEADERS_PKG"
+
+cat > "$ROOTFS_DIR/root/mkevdi.sh" <<'CHROOT_EVDI'
+set -e
+set -o pipefail
+KVER="$1"
+echo 'Installing C toolchain for the evdi build...'
+dnf install -y --nogpgcheck \
+    --releasever=45 \
+    --setopt=install_weak_deps=False \
+    --setopt=skip_if_unavailable=True \
+    gcc make
+echo "Building evdi against the nabu kernel ($KVER)..."
+cd /usr/src/evdi-1.15.0
+make -j"$(nproc)" KDIR="/usr/lib/modules/${KVER}/build"
+mkdir -p "/usr/lib/modules/${KVER}/updates/dkms"
+install -m644 evdi.ko "/usr/lib/modules/${KVER}/updates/dkms/evdi.ko"
+echo 'Enabling DisplayLink manager service...'
+systemctl enable displaylink
+CHROOT_EVDI
+
+chmod +x "$ROOTFS_DIR/root/mkevdi.sh"
+chroot "$ROOTFS_DIR" /bin/bash /root/mkevdi.sh "$KVER"
+rm -f "$ROOTFS_DIR/root/mkevdi.sh"
+
+# rootfs hygiene: kernel headers + module source are build-time only
+rm -rf "$ROOTFS_DIR/usr/src/evdi-1.15.0" "$ROOTFS_DIR/usr/lib/modules/$KVER/build"
+
 # --- kernel prep: vmlinuz into modules dir for dracut/ukify, depmod -----------
 echo ">>> Preparing kernel: vmlinuz + depmod"
 if [ -f "$ROOTFS_DIR/boot/vmlinuz-$KVER" ]; then
@@ -299,7 +351,8 @@ else
 fi
 
 echo ">>> Cleaning up kernel pkg files"
-rm -rf kernel-pkgs kernel-nightly.zip firmware-xiaomi-nabu.pkg.tar.xz
+rm -rf kernel-pkgs kernel-nightly.zip firmware-xiaomi-nabu.pkg.tar.xz \
+    displaylink.pkg.tar.xz evdi-dkms.pkg.tar.xz headers.pkg.tar.xz
 
 umount_chroot_fs
 trap - EXIT
