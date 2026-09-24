@@ -119,6 +119,7 @@ dnf install -y --nogpgcheck \
     @core
 
 echo 'Installing hardware support + nabu services...'
+# nabu parity with nabu-arch-images: sensors + camera (IPA tunings in base/overlay)
 dnf install -y --nogpgcheck \
     --releasever=45 \
     --setopt=install_weak_deps=False \
@@ -132,13 +133,18 @@ dnf install -y --nogpgcheck \
     pipewire-alsa \
     systemd-boot-unsigned \
     systemd-ukify \
+    systemd-pam \
     dracut \
     kmod \
     binutils \
     qrtr \
     pd-mapper \
     NetworkManager-wifi \
-    glibc-langpack-en
+    glibc-langpack-en \
+    iio-sensor-proxy \
+    libcamera \
+    libcamera-ipa \
+    libcamera-tools
 
 # Qualcomm modem/audio services from onesaladleaf/pocketblue COPR (F45 builds)
 echo 'Installing pocketblue services (rmtfs/tqftpserv/qbootctl/q6voiced)...'
@@ -158,6 +164,14 @@ systemctl enable tqftpserv 2>/dev/null || true
 systemctl enable q6voiced 2>/dev/null || true
 systemctl enable qrtr-ns 2>/dev/null || true
 systemctl enable pd-mapper 2>/dev/null || true
+systemctl enable iio-sensor-proxy 2>/dev/null || true
+
+echo 'Setting HandlePowerKey=ignore (tablet: power key must not shutdown while fiddling)...'
+mkdir -p /etc/systemd/logind.conf.d
+cat > /etc/systemd/logind.conf.d/10-nabu-power.conf <<'EOF'
+[Login]
+HandlePowerKey=ignore
+EOF
 
 echo 'Creating user...'
 # Fedora's default /etc/group has no 'storage'/'optical' (Debian/Arch-isms).
@@ -265,6 +279,14 @@ CHROOT_UKI
 chmod +x "$ROOTFS_DIR/root/mkuki.sh"
 chroot "$ROOTFS_DIR" /bin/bash /root/mkuki.sh "$KVER"
 rm -f "$ROOTFS_DIR/root/mkuki.sh"
+
+# --- apply base/overlay into the rootfs (nabu parity files) --------------------
+# efi-template is excluded: it is staged to /boot/efi separately below.
+echo ">>> Applying base/overlay into rootfs (libcamera tunings etc.)"
+if [ -d "$PWD/base/overlay" ]; then
+    tar -C "$PWD/base/overlay" --exclude='opt/nabu/efi-template' -cf - . \
+        | tar -C "$ROOTFS_DIR" -xf -
+fi
 
 # --- dualboot bootmanager (rEFInd + AndroidBootPkg) into /boot/efi -------------
 echo ">>> Installing efi-template (rEFInd dualboot bootmanager)"
