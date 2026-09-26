@@ -27,8 +27,10 @@ echo ============================================================
 echo            Welcome to WinInstaller for %devicename%
 echo ============================================================
 echo(
-if not exist "%~dp0boot.img" echo boot.img not found for Android recovery fallback. & exit /b 1
-if not exist "%~dp0sta.exe" echo sta.exe not found for Android recovery fallback. & exit /b 1
+if not exist "%~dp0sta.exe" (
+    echo sta.exe not found.
+    exit /b 1
+)
 
 echo Running CHKDSK on the current drive...
 chkdsk %~d0 /F /X
@@ -109,7 +111,7 @@ rmdir /s /q "%~dp0" & wpeutil reboot
 exit
 
 :fail
-"%~dp0sta.exe" -p "%~dp0boot.img" -n 
+if exist "%~dp0boot.img" "%~dp0sta.exe" -p "%~dp0boot.img" -n
 echo Take a picture of the error, force reboot and ask for help on Telegram @wininstaller or @woahelperchat
 pause
 exit /b 1

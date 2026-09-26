@@ -1,17 +1,9 @@
 #!/bin/bash
 
-# ==============================================================================
-# 3-create-release.sh
+# 3-create-release.sh - publish the build artifacts as a GitHub release.
 #
-# Create a GitHub Release from the artifacts produced by the build-variants job:
-#   - each nabu-fedora-installer-<variant> directory is packaged as a
-#     flashable ZIP (bin/, DBKP/, efi/, images/, installer/, META-INF/,
-#     flash-linux.bat/.sh)
-#   - the EFI files zip and flashable ESP image are attached as extras
-#
-# Requires: GH_TOKEN (or GH_CLI) and the `artifacts/` directory downloaded
-# with actions/download-artifact.
-# ==============================================================================
+# Each nabu-fedora-installer-<variant> dir becomes a flashable ZIP; the EFI zip
+# and ESP image ride along. Needs GH_TOKEN and the downloaded artifacts/ dir.
 
 set -e
 set -u
@@ -77,7 +69,8 @@ if [ -f "docs/release-notes.md" ]; then
     CHANGELOG=$(cat docs/release-notes.md)
 fi
 
-COMMIT_URL="${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-your/repo}/commit/${GITHUB_SHA:-HEAD}"
+SHA="${GITHUB_SHA:-HEAD}"
+COMMIT_URL="${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-your/repo}/commit/${SHA}"
 
 ASSET_NOTES=""
 for ASSET in "${ASSETS_TO_UPLOAD[@]}"; do
@@ -105,7 +98,7 @@ ${CHANGELOG}
 
 ${ASSET_NOTES}
 
-This build is based on commit: [${GITHUB_SHA:0:7}](${COMMIT_URL})
+This build is based on commit: [${SHA:0:7}](${COMMIT_URL})
 EOF
 )
 

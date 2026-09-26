@@ -1,15 +1,8 @@
 #!/bin/bash
 
-# ==============================================================================
-# 2-create-rootfs-kde.sh
-#
-# Build the KDE Plasma variant rootfs image on top of the base rootfs directory.
-# Produces a minimized ext4 images/rootfs.img (label fedora_root) that is
-# flashed to the `linux` partition by flash-linux.sh.
-#
-# Env:
-#   BUILD_VERSION   e.g. 45
-# ==============================================================================
+# KDE Plasma variant: copies the base rootfs, installs the desktop,
+# packs a minimized ext4 images/rootfs.img (label fedora_root) for the
+# `linux` partition. Env: BUILD_VERSION
 
 set -e
 
@@ -27,7 +20,7 @@ BUILD_VERSION="${BUILD_VERSION}"
 ROOTFS_NAME="$PWD/rootfs.img"
 IMG_SIZE="8G"
 
-# --- 1. copy base rootfs -------------------------------------------------------
+# --- 1. copy base rootfs
 echo "Creating $VARIANT_NAME rootfs from base..."
 rm -rf "$ROOTFS_DIR"
 cp -a "$BASE_ROOTFS_DIR" "$ROOTFS_DIR"
@@ -49,7 +42,7 @@ trap umount_chroot_fs EXIT
 
 mount_chroot_fs
 
-# --- 2. install KDE Plasma inside chroot ----------------------------------------
+# --- 2. install KDE Plasma inside chroot
 echo "Installing KDE Plasma desktop inside chroot..."
 chroot "$ROOTFS_DIR" /bin/bash <<'CHROOT_KDE'
 set -e
@@ -116,7 +109,7 @@ umount_chroot_fs
 trap - EXIT
 sync
 
-# --- 3. pack ext4 rootfs.img ----------------------------------------------------
+# --- 3. pack ext4 rootfs.img
 echo "Creating ext4 rootfs image: $ROOTFS_NAME (initial size: $IMG_SIZE)"
 fallocate -l "$IMG_SIZE" "$ROOTFS_NAME"
 mkfs.ext4 -L fedora_root -F "$ROOTFS_NAME"
@@ -134,7 +127,7 @@ rmdir "$MOUNT_DIR"
 trap - EXIT
 sync
 
-# --- 4. minimize the image -------------------------------------------------------
+# --- 4. minimize the image
 echo "Minimizing the image file..."
 e2fsck -f -y "$ROOTFS_NAME" || true
 resize2fs -M "$ROOTFS_NAME"
